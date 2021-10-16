@@ -1,53 +1,309 @@
-# Serverless Cloud Example Application
+# Example Project from [A First Look at Serverless Cloud](https://dev.to/ajcwebdev/a-first-look-at-serverless-cloud-3e18)
 
-This application is a sample to-do app build powered by React, and yes Serverless Cloud!
-You now own a personal development instance on Serverless Cloud. Just play with the code and watch changes synced in seconds.
+[Serverless Cloud](https://www.serverless.com/cloud) is a new serverless app platform from [Serverless, Inc.](https://serverless.com/) Unlike the company's initial product, the [Serverless Framework](https://www.serverless.com/framework), it does not deploy your application directly to AWS. Instead, your apps are instantly deployed and live on a new hosting service in the cloud with a dashboard and real-time logs.
 
-## APIs
+## Setup
 
-Note that several endpoints are already defined by using the `api` object in `index.js`. You can create new API routes or update the existing ones to see the effect.
-More information about APIs can be found [here](https://serverless.github.io/cloud/apps/api.html).
+### Install Cloud CLI
 
-## Serverless Data
+Install `@serverless/cloud` from `npm`.
 
-Serverless Data is super-fast(single-digit miliseconds response time) automatically scaleable datastore that is capable of storing simple K/V items, or massive collections of complex objects that can be queried on multiple dimensions, sorted, and paginated.
-You don't need to think about maintenance and capacity planning while Serverless Cloud automatically takes care of it backed by AWS DynamoDB Global Tables.
-Serverless Data is just there as a part of runtime so you don't need to provide credentialls, connection strings etc. All you need to do is to write code to get, set, or remove data. Note that Serverless Data makes API calls in order to set and retrieve data, so any route/function that calls a Serverless Data method must use `async/await`. There's already a data in your sample application seeded from `data.json` file in this directory.
+```bash
+npm i -g @serverless/cloud
+```
 
-You can import and export data to/from your personal development instance by typing `import` and `export` while you're in Cloud Shell or you can just directly type `cloud import` or `cloud export` without starting the Cloud Shell.
+### Initialize Service
 
-More information about Serverless Data can be found [here](https://serverless.github.io/cloud/apps/data.html).
+Initialize your Serverless Cloud service with the `cloud` command.
 
-## Schedules
+```bash
+cloud
+```
 
-Serverless Cloud lets you create scheduled tasks using either `.every()` or `.cron()` methods. In this way, you can build automation for periodic tasks like batch processing etc.
+Your browser will open automatically and log you in via the CLI or provide a login link in the terminal. Once you are connected you will be given an activation code to enter when prompted.
 
-More information about Schedules can be found [here](https://serverless.github.io/cloud/apps/schedule.html).
+### Deploy to staging environment
 
-## Testing
+Give you service a name and deploy it with `deploy dev` in the interactive terminal.
 
-Serverless Cloud has built-in support for automated unit and integration testing. See the tests written for the sample app under tests/integration folder. You can write tests based on [Jest testing framework](https://jestjs.io/).
-Just type `test` when you're in Cloud Shell or type `cloud test` from your terminal to run the tests on your personal development instance.
+```bash
+deploy dev
+```
 
-More information about testing can be found [here](https://serverless.github.io/cloud/apps/testing.html).
+You can also use `cloud deploy dev` if you want to clone this project from the repo and immediately deploy it.
 
-## CLI and Cloud Shell
+```bash
+cloud deploy dev
+```
 
-Serverless Cloud provides a seamless CLI experience to manage the service you built on Serverless Cloud. You can type `cloud start` or `cloud` when you are in the root directory of a Serverless Cloud project. This will trigger the Cloud Shell where you can run commands to list/delete your instances and services, share/clone the instances, import/export data to/from your personal development instances. All the available cloud commands can be seen when you type `help` from Cloud Shell or `cloud help` from your terminal.
+You will be given a deployed [endpoint](https://fabulous-mvp-00zr8.cloud.serverless.com/) with a sample todo app.
 
-More information about the CLI can be found [here](https://serverless.github.io/cloud/cli.html).
+## Project Code
 
-## Development Workflows
+### `package.json`
 
-Serverless Cloud provides you with the personal development environment that's accessible you and only you. The URL for it is NOT accessible unless you are in personal development mode.
-When you need to show your work to others or deploy applications so the rest of the world can see it, some handy commands from CLI will be helpful.
+The `@serverless/cloud` package is included by default in the cloud runtime, so it does not need to be included as a dependency in `package.json`.
 
-- Type `share` from Cloud Shell when you need to share an instance that contains both code and data with your colleagues and continue working in your personal development environment freely.
-- Type `deploy <stage>` when you need to deploy your code to a permanent stage and make it accessible to your CI tool or your users.
-- Type `clone <stage>` when you need to copy both code and data of an instance to your personal development data and reproduce a bug on a stage.
+```json
+{
+  "name": "ajcwebdev-serverless-cloud",
+  "version": "1.0.0",
+  "description": "Serverless Cloud todo api",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "cloud",
+    "test": "cloud test"
+  },
+  "devDependencies": {
+    "@jest/globals": "^27.1.0",
+    "@serverless/cloud": "^0.0.22"
+  },
+  "serverless": {
+    "org": "ajcwebdev",
+    "service": "ajcwebdev-serverless-cloud"
+  }
+}
+```
 
-More information about development workflows can be found [here](https://serverless.github.io/cloud/workflows.html).
+### `index.js`
 
-## Feedback
+We import a handful of modules from `@serverless/cloud` at the top of our `index.js` file.
 
-Many parts of this are still experimental, so please keep that in mind when testing. Please log any issues and additional feedback can be sent to cloud@serverless.com.
+```js
+// index.js
+
+import {
+  api,
+  data,
+  schedule,
+  params
+} from '@serverless/cloud'
+```
+
+* `api` is used to build REST APIs.
+  * `api.get` - `GET` method
+  * `api.post` - `POST` method
+  * `api.delete` - `DELETE` method
+  * `api.use` - Middleware
+* `data` is used to access Serverless Data.
+  * `data.get` - Reads the data
+  * `data.getByLabel` - Reads the data with a specified label
+  * `data.set` - Writes the data to storage
+  * `data.remove` - Deletes the data
+* `schedule` is used to create scheduled tasks.
+  * `schedule.every` - Runs on a specified interval of time such as every 60 minutes
+
+### `getTodos` function
+
+This function can be reused in different API paths to get all the todos or to get a specific todo based on its label.
+
+```js
+// index.js
+
+const getTodos = async (status, meta) => {
+  let result
+
+  if (status === 'all') {
+    result = await data.get('todo:*', meta)
+  } else if (status === 'complete') {
+    result =  await data.getByLabel('label1','complete:*', meta)
+  } else {
+    result = await data.getByLabel('label1','incomplete:*', meta)
+  }
+
+  return {
+    items: result.items.map(
+      item => item.value
+    )
+  }
+}
+```
+
+### `GET` todo items - `/todos`
+
+This function calls our `getTodos` function with the status and returns the results.
+
+```js
+// index.js
+
+api.get('/todos', async (req, res) => {
+  let result = await getTodos(
+    req.query.status,
+    req.query.meta ? true : {}
+  )
+  
+  console.log(params.CLOUD_URL)
+
+  res.send({
+    items: result.items
+  })
+})
+```
+
+### `POST` updates to a todo item - `'/todos/:id'`
+
+This function takes the `body` of the request and sets it to `data`. The `body` can include a `duedate`. It also includes an `id`, `createdAt` date, and `status` that can be `complete` or `incomplete`. After setting the todo, the `getTodos` query is run again on all the todos and the updated list is returned.
+
+```js
+// index.js
+
+api.post('/todos/:id', async (req, res) => {
+  console.log(new Date().toISOString())
+
+  let body = req.body
+  if (body.duedate) {
+    body.duedate = new Date(body.duedate).toISOString()
+  }
+
+  await data.set(
+    `todo:${req.params.id}`,
+    {
+      ...body,
+      createdAt: Date.now()
+    },
+    Object.assign({},
+      req.body.status ? 
+        { 
+          label1: body.status === 'complete'
+            ? `complete:${new Date().toISOString()}` 
+            : `incomplete:${body.duedate ? body.duedate : '9999' }` }
+        : null
+    )
+  )
+  
+  let result = await getTodos(
+    req.query.status
+  )
+
+  res.send({
+    items: result.items
+  })
+})
+```
+
+### `DELETE` a todo item - `'/todos/:id'`
+
+This function deletes the todo with `data.remove` and then queries and returns the remaining todos in the list.
+
+```js
+// index.js
+
+api.delete('/todos/:id', async (req, res) => {
+  await data.remove(`todo:${req.params.id}`)
+  
+  let result = await getTodos(req.query.status)
+
+  res.send({
+    items: result.items
+  })
+})
+```
+
+### Custom error handler middleware
+
+This function provides middleware for error handling. Errors are also streamed live to your terminal in dev mode.
+
+```js
+// index.js
+
+api.use((err, req, res, next) => {
+  console.error(err.stack)
+
+  if (!err.statusCode) {
+    err.statusCode = 500
+  }
+
+  const error = {
+    name: err.name,
+    statusCode: err.statusCode,
+    message: err.message,
+  }
+
+  res.status(err.statusCode).json(error)
+})
+```
+
+### Check for overdue todos hourly with `schedule.every`
+
+Sometimes you might want to run code on a schedule, like if you want to send alerts when items are overdue. This function looks for items that are overdue, loops through the overdue items, and sends an alert if necessary.
+
+```js
+// index.js
+
+schedule.every("60 minutes", async () => {
+  console.log(`Checking for overdue TODOs...`)
+
+  let overdueItems = await data.getByLabel(
+    'label1',
+    `incomplete:<${new Date().toISOString()}`
+  )
+
+  if (overdueItems.items.length === 0) {
+    console.log(`Nothing overdue!`)
+  }
+
+  for (let item of overdueItems.items) {
+    console.log(
+      `ALERT: '${item.value.name}' is overdue!!!`
+    )
+  }
+})
+```
+
+### Sample todos in `data.json`
+
+```json
+{
+  "key": "todo:1",
+
+  "value": { 
+    "id": "1", 
+    "name": "Deploy an amazing Serverless Cloud app",
+    "status": "complete",
+    "completed": "2021-07-01T12:00:00.000Z",
+    "createdAt": 1627316142196
+  },
+
+  "label1": "complete:2021-07-01T012:00:00.000Z"
+},
+```
+
+### Static assets
+
+You can serve up static assets from the `static` folder. The folder currently contains:
+* `assets` folder for images
+* `index.html` to serve the main page
+* `styles.css` for styling
+* `todos.js` for all the React code so you can scare the backend developers on your team
+
+Deploy to production with `cloud deploy prod` or `deploy prod` in the interactive terminal session.
+
+```bash
+cloud deploy prod
+```
+
+The [link](https://novel-app-fpp5w.cloud.serverless.com) will be automatically pasted to your clipboard.
+
+![03-todo-template-edit](https://dev-to-uploads.s3.amazonaws.com/uploads/articles/636icv33j0sgw3qtapv2.png)
+
+## Dashboard
+
+Since this is a cloud that means it has to have a dashboard.
+
+**Services** - Serverless Cloud allows you to build services within your team's organization. You can create as many services as you want for different use cases or applications.
+
+![04-services](https://dev-to-uploads.s3.amazonaws.com/uploads/articles/5ig6z59w4ytn0yt6v583.png)
+
+**Instances** - Each instance is completely separate from all the other instances in a service and store their own copy of the data. The environments within instances are identical, so you can ensure that your application will behave exactly the same across all of them.
+
+![05-instances](https://dev-to-uploads.s3.amazonaws.com/uploads/articles/n5y8jh2sk9e52iog95sz.png)
+
+**Metrics** - Invocations, errors, average latency, and throttles
+
+![06-dev-stage-metrics](https://dev-to-uploads.s3.amazonaws.com/uploads/articles/rtdb7om647724tbn44hl.png)
+
+### Resources
+
+* [Documentation](https://www.serverless.com/cloud/docs/)
+* [GitHub repository](https://github.com/serverless/cloud)
